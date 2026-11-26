@@ -10,6 +10,7 @@ export default function WelcomePage() {
   const input = useRef<HTMLInputElement>(null);
   const [light, setLight] = useState(false);
   const [toast, setToast] = useState("");
+  const pending = useRef<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [percent, setPercent] = useState(0);
   const [label, setLabel] = useState("");
@@ -24,21 +25,27 @@ export default function WelcomePage() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  async function deliver(file: File): Promise<void> {
+  type Outcome = "shared" | "cancelled" | "blocked" | "saved";
+
+  async function deliver(file: File): Promise<Outcome> {
     const nav = navigator as Navigator & {
       canShare?: (d: ShareData) => boolean;
       share?: (d: ShareData) => Promise<void>;
     };
-    const isMobile =
-      /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+    const isIOS =
+      /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const isMobile = isIOS || /Android/i.test(navigator.userAgent);
     if (isMobile && nav.share && nav.canShare?.({ files: [file] })) {
       try {
-        await nav.share({ files: [file], title: file.name });
-        return;
+        await nav.share({ files: [file] });
+        return "shared";
       } catch (c) {
-        // Safari may refuse the share sheet after a long async wait; fall back to a normal save.
-        if (c instanceof DOMException && c.name === "AbortError") return;
+        const n = c instanceof DOMException ? c.name : "";
+        if (n === "AbortError") return "cancelled";
+        // Safari only opens the share sheet inside a tap; keep the file for the next tap
+        // instead of falling back to Safari's own download prompt.
+        if (n === "NotAllowedError" && isIOS) return "blocked";
       }
     }
     const blobUrl = URL.createObjectURL(file);
@@ -50,11 +57,28 @@ export default function WelcomePage() {
     a.click();
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
+    return "saved";
+  }
+
+  async function finish(file: File) {
+    const outcome = await deliver(file);
+    if (outcome === "blocked") {
+      pending.current = file;
+      setToast("الفيديو جاهز — اضغط «سحب الفيديو» مرة أخرى لفتح نافذة المشاركة");
+    } else {
+      pending.current = outcome === "cancelled" ? file : null;
+      setToast(outcome === "cancelled" ? "تم إغلاق نافذة المشاركة — اضغط مرة أخرى لإعادة فتحها" : "تم تحميل الفيديو بنجاح ✓");
+    }
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
+    // File already prepared: open the share sheet right away, inside this tap.
+    if (pending.current) {
+      void finish(pending.current);
+      return;
+    }
     const v = (input.current?.value ?? "").trim();
     try {
       const u = new URL(v);
@@ -110,8 +134,7 @@ export default function WelcomePage() {
       const type = res.headers.get("content-type")?.split(";")[0] || data.job.mimeType || "video/mp4";
       const file = new File(chunks as BlobPart[], name, { type });
       setPercent(100);
-      await deliver(file);
-      setToast("تم تحميل الفيديو بنجاح ✓");
+      await finish(file);
     } catch (err) {
       setToast(err instanceof Error && err.message ? err.message : "حدث خطأ أثناء التحميل. أعد المحاولة.");
     } finally {
@@ -136,7 +159,7 @@ export default function WelcomePage() {
         <form className="lg-card lg-glass" onSubmit={submit} noValidate>
           <label className="lg-field">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1" /><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1" /></svg>
-            <input ref={input} type="url" inputMode="url" autoComplete="off" placeholder="https://tiktok.com/@abd/video/..." />
+            <input ref={input} onChange={() => { pending.current = null; }} type="url" inputMode="url" autoComplete="off" placeholder="https://tiktok.com/@abd/video/..." />
             <span className="lg-fmt">MP4</span>
           </label>
           <button className="lg-go" type="submit" disabled={busy} aria-busy={busy} style={busy ? { position: "relative", overflow: "hidden", opacity: 1 } : undefined}>
