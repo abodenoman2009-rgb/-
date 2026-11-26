@@ -40,8 +40,8 @@ const STEPS = [
     icon: "link" as const,
   },
   {
-    title: "اختر الصيغة",
-    body: "MP4 للتوافق الكامل، WEBM لحجم أصغر، أو صوت M4A فقط.",
+    title: "أعلى جودة تلقائياً",
+    body: "نختار أفضل دقة وأفضل صوت ونرسلهما في ملف MP4 واحد.",
     icon: "film" as const,
   },
   {
@@ -163,7 +163,7 @@ export default async function DownloaderPage() {
 
             <p className="mx-auto mt-4 max-w-2xl text-[0.92rem] leading-8 text-mist/65 sm:text-base">
               عبود يستقبل رابطك في الحقل أدناه. الصق الرابط من تيك توك، إنستغرام، يوتيوب، سناب شات أو
-              فيسبوك، اختر الصيغة، ونرسل الملف مباشرة كـ MP4 أو WEBM أو صوت — بدون صفحات وسيطة.
+              فيسبوك، ونرسل الملف مباشرة بأعلى جودة كـ MP4 — بدون صفحات وسيطة.
             </p>
 
             <div className="mt-6 flex items-center justify-center gap-2.5">
@@ -207,7 +207,7 @@ export default async function DownloaderPage() {
               <div className="pb-3">
                 <p className="text-[0.84rem] font-extrabold text-white">عبود يجهّز لك الحقل</p>
                 <p className="mt-1 text-[0.72rem] leading-6 text-mist/45">
-                  الصق الرابط في البطاقة، واختر الصيغة — التحميل يبدأ فوراً.
+                  الصق الرابط في البطاقة — التحميل يبدأ فوراً.
                 </p>
               </div>
             </div>

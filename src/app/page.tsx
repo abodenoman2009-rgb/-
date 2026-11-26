@@ -77,7 +77,7 @@ export default function WelcomePage() {
           className="animate-rise mt-2.5 max-w-sm text-[0.85rem] leading-7 text-mist/65 sm:text-base"
           style={{ animationDelay: "80ms" }}
         >
-          عبود جاهز ليستقبل رابطك — الصقه في الحقل، اختر الصيغة، والملف يصل إلى جهازك مباشرةً.
+          عبود جاهز ليستقبل رابطك — الصقه في الحقل، والملف يصل إلى جهازك مباشرةً.
         </p>
 
         {/* 3D presenter + real input preview */}
