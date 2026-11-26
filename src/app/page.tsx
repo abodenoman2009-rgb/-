@@ -4,13 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import "./login.css";
 
-const PREFILL_KEY = "abd-prefill";
 
 export default function WelcomePage() {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [light, setLight] = useState(false);
   const [toast, setToast] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [percent, setPercent] = useState(0);
+  const [label, setLabel] = useState("");
 
   useEffect(() => {
     router.prefetch("/downloader");
@@ -18,12 +20,41 @@ export default function WelcomePage() {
 
   useEffect(() => {
     if (!toast) return;
-    const t = window.setTimeout(() => setToast(""), 2600);
+    const t = window.setTimeout(() => setToast(""), 5000);
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  function submit(e: React.FormEvent) {
+  async function deliver(file: File): Promise<void> {
+    const nav = navigator as Navigator & {
+      canShare?: (d: ShareData) => boolean;
+      share?: (d: ShareData) => Promise<void>;
+    };
+    const isMobile =
+      /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (isMobile && nav.share && nav.canShare?.({ files: [file] })) {
+      try {
+        await nav.share({ files: [file], title: file.name });
+        return;
+      } catch (c) {
+        // Safari may refuse the share sheet after a long async wait; fall back to a normal save.
+        if (c instanceof DOMException && c.name === "AbortError") return;
+      }
+    }
+    const blobUrl = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = file.name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
+  }
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     const v = (input.current?.value ?? "").trim();
     try {
       const u = new URL(v);
@@ -32,10 +63,61 @@ export default function WelcomePage() {
       setToast("الصق رابط فيديو صحيح أولاً");
       return;
     }
+    setBusy(true);
+    setPercent(0);
+    setLabel("جارٍ التجهيز…");
     try {
-      window.sessionStorage.setItem(PREFILL_KEY, v);
-    } catch {}
-    router.push("/downloader");
+      const r = await fetch("/api/resolve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: v, format: "mp4" }),
+      });
+      const data = (await r.json().catch(() => null)) as {
+        ok?: boolean;
+        job?: { id: string; fileName?: string | null; mimeType?: string | null };
+        error?: { message?: string };
+      } | null;
+      if (!data?.ok || !data.job) {
+        throw new Error(data?.error?.message ?? "تعذّر تنفيذ الطلب. أعد المحاولة.");
+      }
+      const res = await fetch(`/api/download/${data.job.id}`, { cache: "no-store" });
+      if (!res.ok || !res.body) {
+        const d = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(d?.error ?? "تعذّر تجهيز الفيديو. أعد المحاولة.");
+      }
+      const total = Number(res.headers.get("content-length") ?? "0");
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let got = 0;
+      setLabel("جارٍ التحميل…");
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          got += value.byteLength;
+          if (total > 0) setPercent(Math.min(99, Math.round((got / total) * 100)));
+        }
+      }
+      if (got === 0 || (total > 0 && got < total)) throw new Error("انقطع التحميل قبل اكتمال الفيديو. أعد المحاولة.");
+      let name = data.job.fileName ?? "abd-video.mp4";
+      const hn = res.headers.get("x-file-name");
+      if (hn) {
+        try {
+          name = decodeURIComponent(hn);
+        } catch {}
+      }
+      const type = res.headers.get("content-type")?.split(";")[0] || data.job.mimeType || "video/mp4";
+      const file = new File(chunks as BlobPart[], name, { type });
+      setPercent(100);
+      await deliver(file);
+      setToast("تم تحميل الفيديو بنجاح ✓");
+    } catch (err) {
+      setToast(err instanceof Error && err.message ? err.message : "حدث خطأ أثناء التحميل. أعد المحاولة.");
+    } finally {
+      setBusy(false);
+      setPercent(0);
+    }
   }
 
   return (
@@ -57,9 +139,14 @@ export default function WelcomePage() {
             <input ref={input} type="url" inputMode="url" autoComplete="off" placeholder="https://tiktok.com/@abd/video/..." />
             <span className="lg-fmt">MP4</span>
           </label>
-          <button className="lg-go" type="submit">
+          <button className="lg-go" type="submit" disabled={busy} aria-busy={busy} style={busy ? { position: "relative", overflow: "hidden", opacity: 1 } : undefined}>
+            {busy && <span aria-hidden style={{ position: "absolute", insetBlock: 0, insetInlineStart: 0, width: `${percent}%`, background: "rgba(169,92,255,.35)", transition: "width .3s" }} />}
+            {busy ? (
+              <span style={{ position: "relative" }}>{label} {percent > 0 ? `${percent}%` : ""}</span>
+            ) : (<>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v11m-5-4 5 5 5-5M5 20h14" /></svg>
             سحب الفيديو
+            </>)}
           </button>
         </form>
 
