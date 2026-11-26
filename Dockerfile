@@ -28,7 +28,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 COPY package.json next.config.ts drizzle.config.json ./
 COPY public ./public
-COPY drizzle ./drizzle
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
