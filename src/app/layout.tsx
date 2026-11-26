@@ -55,7 +55,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ar" dir="rtl" className={`${tajawal.variable} ${grotesk.variable} ${aref.variable}`}>
+    <html lang="ar" dir="rtl" suppressHydrationWarning className={`${tajawal.variable} ${grotesk.variable} ${aref.variable}`}>
+      <head>
+        <link rel="preload" as="image" href="/splash.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'try{if(sessionStorage.getItem("abd-splash-seen-v2")==="1")document.documentElement.classList.add("splash-seen")}catch(e){}',
+          }}
+        />
+      </head>
       <body className="antialiased">
         <MotionRoot>
           <SplashGate />
