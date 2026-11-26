@@ -6,9 +6,11 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { downloads } from "@/db/schema";
 import { findJob } from "@/lib/jobs";
+import { prepareBestFile, ResolverError } from "@/lib/resolver";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 function contentDisposition(fileName: string, inline: boolean): string {
   const safe = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_").slice(0, 120);
@@ -77,6 +79,43 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       });
     } catch {
       return errorResponse("الملف التجريبي غير متاح على الخادم.", 410);
+    }
+  }
+
+  // Platform links: fetch the best video + best audio, merge into one MP4 and
+  // send the finished file (not a temporary remote link).
+  if (!inline && job.engine === "ytdlp") {
+    try {
+      const prepared = await prepareBestFile(job.sourceUrl, job.platform, job.title);
+      const stream = createReadStream(prepared.filePath);
+      let cleaned = false;
+      const done = () => {
+        if (cleaned) return;
+        cleaned = true;
+        void prepared.cleanup();
+      };
+      stream.on("close", done);
+      stream.on("error", done);
+      request.signal.addEventListener("abort", () => stream.destroy());
+      return new Response(Readable.toWeb(stream) as unknown as ReadableStream, {
+        status: 200,
+        headers: {
+          "content-type": prepared.mimeType,
+          "content-length": String(prepared.size),
+          "content-disposition": contentDisposition(prepared.fileName, false),
+          "x-file-name": encodeURIComponent(prepared.fileName),
+          "cache-control": "no-store",
+        },
+      });
+    } catch (error) {
+      if (error instanceof ResolverError) {
+        return Response.json(
+          { ok: false, error: error.message, code: error.code, hint: error.hint },
+          { status: error.code === "busy" ? 503 : 422 },
+        );
+      }
+      console.error("prepare failed", error);
+      return errorResponse("تعذّر تجهيز الفيديو. أعد المحاولة بعد لحظات.", 500);
     }
   }
 

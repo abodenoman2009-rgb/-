@@ -1,4 +1,8 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdir, readdir, rm, stat as fsStat } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 import {
   isDirectMediaUrl,
@@ -339,7 +343,7 @@ function pickFormat(info: YtInfo, format: string): { format: YtFormat; note?: st
   );
 }
 
-function mapYtdlpError(stderr: string, platformId: string): ResolverError {
+export function mapYtdlpError(stderr: string, platformId: string): ResolverError {
   const text = stderr.toLowerCase();
   if (text.includes("sign in to confirm") || text.includes("not a bot")) {
     return new ResolverError(
@@ -409,6 +413,8 @@ async function resolveWithYtdlp(url: string, format: string, platformId: string)
       [
         ...engine.prefix,
         "-J",
+        "--js-runtimes",
+        "node",
         "--no-warnings",
         "--no-playlist",
         "--socket-timeout",
@@ -469,12 +475,16 @@ async function resolveWithYtdlp(url: string, format: string, platformId: string)
   if (isAudioOnly) {
     if (chosen.abr) qualityParts.push(`${Math.round(chosen.abr)} kbps`);
   } else if (chosen.height) {
-    qualityParts.push(`${chosen.height}p`);
+    const bestHeight = Math.max(
+      chosen.height,
+      ...(info.formats ?? []).filter((item) => item.vcodec !== "none").map((item) => item.height ?? 0),
+    );
+    qualityParts.push(`${bestHeight}p`);
     if (chosen.fps && chosen.fps >= 50) qualityParts.push(`${Math.round(chosen.fps)}fps`);
   } else if (chosen.format_note) {
     qualityParts.push(chosen.format_note);
   }
-  if (size) qualityParts.push(humanSize(size));
+  if (size && !(chosen.height && qualityParts[0] !== `${chosen.height}p`)) qualityParts.push(humanSize(size));
 
   const title = (info.title ?? info.fulltitle ?? "فيديو").toString().trim();
   const author = info.uploader ?? info.channel ?? info.creator ?? null;
@@ -538,6 +548,175 @@ export async function resolveMedia(rawUrl: string, format: string, platformId: s
       const direct = await probeDirect(rawUrl, format).catch(() => null);
       if (direct) return direct;
     }
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Best-quality download: yt-dlp fetches the best video + best audio and ffmpeg
+// merges them into one H.264/AAC MP4 (plays on iPhone, Android and desktop).
+// ---------------------------------------------------------------------------
+
+const TMP_ROOT = path.join(os.tmpdir(), "abd-downloads");
+const MAX_PARALLEL = 3;
+let activeDownloads = 0;
+
+export type PreparedFile = {
+  filePath: string;
+  size: number;
+  fileName: string;
+  mimeType: string;
+  cleanup: () => Promise<void>;
+};
+
+async function sweepOld() {
+  try {
+    const dirs = await readdir(TMP_ROOT);
+    const now = Date.now();
+    await Promise.all(
+      dirs.map(async (dir) => {
+        const full = path.join(TMP_ROOT, dir);
+        const info = await fsStat(full).catch(() => null);
+        if (info && now - info.mtimeMs > 30 * 60 * 1000) await rm(full, { recursive: true, force: true });
+      }),
+    );
+  } catch {
+    /* nothing to sweep */
+  }
+}
+
+export async function prepareBestFile(
+  sourceUrl: string,
+  platformId: string,
+  title: string | null,
+): Promise<PreparedFile> {
+  const engine = await getYtdlpEngine();
+  if (!engine) {
+    throw new ResolverError(
+      "engine_missing",
+      "محرك التحميل غير مثبت على الخادم.",
+      "أعد المحاولة لاحقاً أو تواصل مع مالك الموقع.",
+    );
+  }
+  if (activeDownloads >= MAX_PARALLEL) {
+    throw new ResolverError(
+      "busy",
+      "الخادم مشغول بتجهيز فيديوهات أخرى.",
+      "انتظر دقيقة ثم اضغط تنزيل مرة أخرى.",
+    );
+  }
+
+  activeDownloads += 1;
+  const dir = path.join(TMP_ROOT, randomUUID());
+  const cleanup = async () => {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  };
+
+  try {
+    void sweepOld();
+    await mkdir(dir, { recursive: true });
+    try {
+      await execFileAsync(
+        engine.command,
+        [
+          ...engine.prefix,
+          "--js-runtimes",
+          "node",
+          "--no-warnings",
+          "--no-playlist",
+          "--no-part",
+          "--socket-timeout",
+          "20",
+          "--retries",
+          "3",
+          "--concurrent-fragments",
+          "4",
+          "--max-filesize",
+          `${Math.round(MAX_BYTES / (1024 * 1024))}M`,
+          "-f",
+          "bv*[filesize<?280M]+ba/b[filesize<?280M]/bv*+ba/b",
+          // H.264 + AAC in MP4 first (plays everywhere, incl. iPhone), then highest resolution.
+          "-S",
+          "vcodec:h264,ext:mp4:m4a,res,acodec:aac",
+          "--merge-output-format",
+          "mp4",
+          "-o",
+          path.join(dir, "video.%(ext)s"),
+          sourceUrl,
+        ],
+        { timeout: 280_000, maxBuffer: 16 * 1024 * 1024, encoding: "utf8" },
+      );
+    } catch (error) {
+      const failed = error as { stderr?: string; killed?: boolean; signal?: string };
+      if (failed.killed || failed.signal === "SIGTERM") {
+        throw new ResolverError(
+          "timeout",
+          "استغرق تجهيز الفيديو وقتاً أطول من المسموح.",
+          "الفيديو كبير جداً أو الاتصال بطيء. أعد المحاولة.",
+        );
+      }
+      const stderr = failed.stderr ?? "";
+      if (/larger than max-filesize|max-filesize/i.test(stderr)) {
+        throw new ResolverError(
+          "too_large",
+          "حجم الفيديو أكبر من الحد المسموح (300MB).",
+          "جرّب فيديو أقصر.",
+        );
+      }
+      if (/ffmpeg/i.test(stderr) && /not found|ffprobe and ffmpeg/i.test(stderr)) {
+        throw new ResolverError("ffmpeg_missing", "أداة دمج الصوت والصورة غير مثبتة.", "تواصل مع مالك الموقع.");
+      }
+      throw mapYtdlpError(stderr, platformId);
+    }
+
+    // yt-dlp skips (exit 0) a file bigger than --max-filesize, so no output means "too large".
+    const files = (await readdir(dir)).filter((name) => /^video\.[a-z0-9]+$/i.test(name));
+    const name = files.find((item) => item.endsWith(".mp4")) ?? files[0];
+    if (!name) {
+      throw new ResolverError(
+        "too_large",
+        "حجم الفيديو أكبر من الحد المسموح (300MB) أو لم يتوفر ملف قابل للتنزيل.",
+        "جرّب فيديو أقصر أو رابطاً آخر.",
+      );
+    }
+    let filePath = path.join(dir, name);
+    // Anything that is not MP4/MOV may not play on iPhone: convert to H.264/AAC MP4.
+    if (!/\.(mp4|mov)$/i.test(name)) {
+      const converted = path.join(dir, "video-converted.mp4");
+      try {
+        await execFileAsync(
+          "ffmpeg",
+          ["-y", "-i", filePath, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-movflags", "+faststart", converted],
+          { timeout: 200_000, maxBuffer: 16 * 1024 * 1024 },
+        );
+        filePath = converted;
+      } catch {
+        throw new ResolverError(
+          "convert_failed",
+          "تعذّر تحويل الفيديو إلى صيغة MP4 متوافقة مع الجوال.",
+          "أعد المحاولة أو جرّب رابطاً آخر.",
+        );
+      }
+    }
+    const info = await fsStat(filePath);
+    if (info.size === 0) {
+      throw new ResolverError("empty_file", "الملف الناتج فارغ.", "أعد المحاولة بعد لحظات.");
+    }
+    const extension = filePath.split(".").pop()!.toLowerCase();
+    const mimeType = extension === "mov" ? "video/quicktime" : "video/mp4";
+    return {
+      filePath,
+      size: info.size,
+      fileName: sanitizeFileName(title ?? "abd-video", extension),
+      mimeType,
+      cleanup: async () => {
+        activeDownloads = Math.max(0, activeDownloads - 1);
+        await cleanup();
+      },
+    };
+  } catch (error) {
+    activeDownloads = Math.max(0, activeDownloads - 1);
+    await cleanup();
     throw error;
   }
 }

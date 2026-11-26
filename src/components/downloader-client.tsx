@@ -7,10 +7,8 @@ import { Mascot } from "@/components/mascot";
 import { Reveal, Tilt } from "@/components/motion";
 import {
   FEATURED_PLATFORMS,
-  FORMATS,
   detectPlatform,
   platformById,
-  type FormatId,
 } from "@/lib/platforms";
 import { formatDuration, formatNumber, humanSize, timeAgo } from "@/lib/format";
 import type { PublicJob, ResolveErrorInfo, SiteStats } from "@/lib/types";
@@ -165,7 +163,6 @@ export function DownloaderClient({
   initialStats: SiteStats;
 }) {
   const [url, setUrl] = useState("");
-  const [format, setFormat] = useState<FormatId>("mp4");
   const [phase, setPhase] = useState<Phase>("idle");
   const [job, setJob] = useState<PublicJob | null>(null);
   const [error, setError] = useState<ResolveErrorInfo | null>(null);
@@ -210,53 +207,154 @@ export function DownloaderClient({
     }
   }, []);
 
-  const startDownload = useCallback(async (target: PublicJob) => {
-    if (downloading) return;
-    setDownloading({ id: target.id, percent: 3 });
-    const fallback = () => {
-      setDownloading(null);
-      window.location.href = `/api/download/${target.id}`;
-    };
+  const preparedRef = useRef<{ id: string; file: File } | null>(null);
 
-    try {
-      const response = await fetch(`/api/download/${target.id}`, { cache: "no-store" });
-      const total = Number(response.headers.get("content-length") ?? "0");
-      if (!response.ok || !response.body || !Number.isFinite(total) || total <= 0 || total > 180 * 1024 * 1024) {
-        fallback();
-        return;
-      }
+  const deliverFile = useCallback(
+    async (file: File, title: string | null): Promise<"shared" | "saved" | "blocked" | "cancelled"> => {
+      const nav = navigator as Navigator & {
+        canShare?: (data: ShareData) => boolean;
+        share?: (data: ShareData) => Promise<void>;
+      };
+      const isMobile =
+        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-
-      for (;;) {
-        // eslint-disable-next-line no-await-in-loop
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          chunks.push(value);
-          received += value.byteLength;
-          setDownloading({ id: target.id, percent: Math.min(99, Math.round((received / total) * 100)) });
+      // Phones and tablets: open the native share sheet (Save Video, Files, WhatsApp...).
+      if (isMobile && nav.share && nav.canShare?.({ files: [file] })) {
+        try {
+          await nav.share({ files: [file], title: title ?? file.name });
+          return "shared";
+        } catch (caught) {
+          const name = caught instanceof DOMException ? caught.name : "";
+          if (name === "AbortError") return "cancelled";
+          if (name === "NotAllowedError") return "blocked";
+          // any other failure: fall through to a normal file save
         }
       }
 
-      const blob = new Blob(chunks as BlobPart[], { type: target.mimeType ?? "video/mp4" });
-      const blobUrl = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(file);
       const anchor = document.createElement("a");
       anchor.href = blobUrl;
-      anchor.download = target.fileName ?? "abd-video.mp4";
+      anchor.download = file.name;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-      setDownloading({ id: target.id, percent: 100 });
-      window.setTimeout(() => setDownloading(null), 1500);
-      void refresh();
-    } catch {
-      fallback();
-    }
-  }, [downloading, refresh]);
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      return "saved";
+    },
+    [],
+  );
+
+  const startDownload = useCallback(
+    async (target: PublicJob) => {
+      if (downloading) return;
+
+      // Already prepared (the browser asked for a fresh tap before opening the share sheet).
+      const ready = preparedRef.current;
+      if (ready && ready.id === target.id) {
+        const outcome = await deliverFile(ready.file, target.title);
+        if (outcome === "blocked") {
+          setNotice("اضغط «تنزيل الآن» مرة أخرى لفتح نافذة الحفظ والمشاركة");
+        } else {
+          if (outcome === "shared" || outcome === "saved") void refresh();
+          setNotice(outcome === "cancelled" ? "تم إغلاق نافذة المشاركة — اضغط تنزيل الآن للمحاولة مجدداً" : null);
+        }
+        return;
+      }
+
+      setDownloading({ id: target.id, percent: 3 });
+      setNotice("جارٍ تجهيز الفيديو بأعلى جودة… قد يستغرق ذلك لحظات");
+
+      const fail = (info: ResolveErrorInfo) => {
+        setDownloading(null);
+        setNotice(null);
+        setError(info);
+        setPhase("error");
+      };
+
+      try {
+        const response = await fetch(`/api/download/${target.id}`, { cache: "no-store" });
+        if (!response.ok || !response.body) {
+          let info: ResolveErrorInfo = {
+            code: "download_failed",
+            message: "تعذّر تجهيز الفيديو.",
+            hint: "أعد المحاولة بعد لحظات.",
+          };
+          try {
+            const data = (await response.json()) as { error?: string; code?: string; hint?: string };
+            info = {
+              code: data.code ?? info.code,
+              message: data.error ?? info.message,
+              hint: data.hint ?? info.hint,
+            };
+          } catch {
+            /* keep the generic message */
+          }
+          fail(info);
+          return;
+        }
+
+        const total = Number(response.headers.get("content-length") ?? "0");
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        setNotice(null);
+
+        for (;;) {
+          // eslint-disable-next-line no-await-in-loop
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            received += value.byteLength;
+            if (total > 0) {
+              setDownloading({ id: target.id, percent: Math.min(99, Math.max(3, Math.round((received / total) * 100))) });
+            }
+          }
+        }
+
+        if (received === 0 || (total > 0 && received < total)) {
+          fail({
+            code: "incomplete",
+            message: "انقطع التحميل قبل اكتمال الفيديو.",
+            hint: "تحقق من اتصالك بالإنترنت ثم اضغط تنزيل مرة أخرى.",
+          });
+          return;
+        }
+
+        let fileName = target.fileName ?? "abd-video.mp4";
+        const headerName = response.headers.get("x-file-name");
+        if (headerName) {
+          try {
+            fileName = decodeURIComponent(headerName);
+          } catch {
+            /* keep the job's name */
+          }
+        }
+        const type = response.headers.get("content-type")?.split(";")[0] || target.mimeType || "video/mp4";
+        const file = new File(chunks as BlobPart[], fileName, { type });
+        preparedRef.current = { id: target.id, file };
+        setDownloading({ id: target.id, percent: 100 });
+
+        const outcome = await deliverFile(file, target.title);
+        if (outcome === "blocked") {
+          setNotice("الفيديو جاهز — اضغط «تنزيل الآن» لفتح نافذة الحفظ والمشاركة");
+        } else if (outcome === "cancelled") {
+          setNotice("تم إغلاق نافذة المشاركة — اضغط تنزيل الآن للمحاولة مجدداً");
+        } else {
+          void refresh();
+        }
+        window.setTimeout(() => setDownloading(null), 800);
+      } catch {
+        fail({
+          code: "network",
+          message: "انقطع الاتصال أثناء تحميل الفيديو.",
+          hint: "تحقق من اتصالك بالإنترنت ثم أعد المحاولة.",
+        });
+      }
+    },
+    [deliverFile, downloading, refresh],
+  );
 
   const submit = useCallback(
     async (options?: { sample?: boolean }) => {
@@ -282,13 +380,14 @@ export function DownloaderClient({
       setError(null);
       setJob(null);
       setPreview(false);
+      preparedRef.current = null;
 
       try {
         const response = await fetch("/api/resolve", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(
-            options?.sample ? { sample: true, format } : { url: url.trim(), format },
+            options?.sample ? { sample: true } : { url: url.trim() },
           ),
           signal: controller.signal,
         });
@@ -301,7 +400,7 @@ export function DownloaderClient({
         if (data.ok && data.job) {
           setJob(data.job);
           setPhase("success");
-          setNotice("الملف جاهز — اضغط تنزيل الآن");
+          void startDownload(data.job);
         } else {
           setError(
             data.error ?? {
@@ -333,7 +432,7 @@ export function DownloaderClient({
         void refresh();
       }
     },
-    [format, phase, refresh, url],
+    [phase, refresh, startDownload, url],
   );
 
   const handlePaste = useCallback(async () => {
@@ -389,7 +488,7 @@ export function DownloaderClient({
               <h2 id="downloader-title" className="text-base font-extrabold text-white">
                 جاهز للتحميل
               </h2>
-              <p className="text-[0.72rem] text-mist/55">الصق الرابط، اختر الصيغة، واضغط تنزيل.</p>
+              <p className="text-[0.72rem] text-mist/55">الصق الرابط واضغط تنزيل.</p>
             </div>
           </div>
 
@@ -479,46 +578,6 @@ export function DownloaderClient({
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-3">
-            {FORMATS.map((item) => {
-              const active = format === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setFormat(item.id)}
-                  aria-pressed={active}
-                  className={`flex items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-right transition ${
-                    active
-                      ? "border-mint/50 bg-mint/[0.09] shadow-[0_0_0_1px_rgba(53,230,194,0.18)]"
-                      : "border-white/10 bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.05]"
-                  }`}
-                >
-                  <span
-                    className={`grid h-8 w-8 place-items-center rounded-lg ${
-                      active ? "bg-mint/15 text-mint" : "bg-white/5 text-mist/60"
-                    }`}
-                  >
-                    <UiIcon name={item.id === "audio" ? "music" : "film"} className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className={`block text-[0.8rem] font-extrabold ${active ? "text-white" : "text-white/80"}`}>
-                      {item.label}
-                    </span>
-                    <span className="block truncate text-[0.65rem] text-mist/50">{item.hint}</span>
-                  </span>
-                  <span
-                    className={`me-auto grid h-4 w-4 shrink-0 place-items-center rounded-full border ${
-                      active ? "border-mint bg-mint text-[#04120f]" : "border-white/20"
-                    }`}
-                  >
-                    {active ? <UiIcon name="check" className="h-2.5 w-2.5" strokeWidth={3} /> : null}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
           <button type="submit" disabled={phase === "loading"} className="btn-primary glow-button press-3d w-full !rounded-2xl !py-3.5 text-base">
             {phase === "loading" ? (
               <>
@@ -529,9 +588,6 @@ export function DownloaderClient({
               <>
                 <UiIcon name="download" className="h-5 w-5" strokeWidth={2.1} />
                 تنزيل الفيديو
-                <span className="rounded-full bg-black/15 px-2 py-0.5 font-mono text-[0.65rem] font-bold">
-                  {format === "audio" ? "M4A" : format.toUpperCase()}
-                </span>
               </>
             )}
           </button>
