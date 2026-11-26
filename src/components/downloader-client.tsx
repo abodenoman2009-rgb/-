@@ -177,6 +177,17 @@ export function DownloaderClient({
   const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    try {
+      const pre = window.sessionStorage.getItem("abd-prefill");
+      if (pre) {
+        window.sessionStorage.removeItem("abd-prefill");
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setUrl(pre);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     setMounted(true);
   }, []);
 
