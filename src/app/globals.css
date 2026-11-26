@@ -895,3 +895,16 @@ html.motion-paused *::before,
 html.motion-paused *::after {
   animation-play-state: paused !important;
 }
+
+/* ---- image splash screen ---- */
+.abd-splash{position:fixed;inset:0;z-index:9999;overflow:hidden;background:#e9dcc3;opacity:0;animation:abd-splash-in .5s ease-out forwards;transition:opacity .5s ease}
+.abd-splash-out{opacity:0!important;animation:none}
+.abd-splash-img,.abd-splash-blur{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;user-select:none;-webkit-user-drag:none}
+.abd-splash-blur{display:none}
+@media (min-aspect-ratio:1/1){
+  .abd-splash-blur{display:block;filter:blur(28px);transform:scale(1.15);object-position:center}
+  .abd-splash-img{object-fit:contain;object-position:center}
+}
+html.splash-seen #abd-splash{display:none}
+html.splash-active,html.splash-active body{overflow:hidden}
+@keyframes abd-splash-in{from{opacity:0}to{opacity:1}}

@@ -102,108 +102,52 @@ export function MotionToggle({ className = "" }: { className?: string }) {
 
 const SPLASH_KEY = "abd-splash-seen-v2";
 
-export function SplashGate() {
-  const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const [leaving, setLeaving] = useState(false);
+const SPLASH_MS = 3000;
+const SPLASH_FADE_MS = 500;
 
-  const close = useCallback(() => {
-    setLeaving(true);
-    window.setTimeout(() => setVisible(false), 520);
-    document.body.style.removeProperty("overflow");
-  }, []);
+/** Full-screen image splash: shown once per session for 3 s, fades in and out. */
+export function SplashGate() {
+  const [phase, setPhase] = useState<"in" | "out" | "gone">("in");
 
   useEffect(() => {
     let seen = false;
     try {
       seen = window.sessionStorage.getItem(SPLASH_KEY) === "1";
-      window.sessionStorage.setItem(SPLASH_KEY, "1");
     } catch {
       seen = false;
     }
-    if (seen) return;
-
-    setMounted(true);
-    setVisible(true);
-    document.body.style.setProperty("overflow", "hidden");
-
-    const reduced = document.documentElement.classList.contains("reduce-motion");
-    const timer = window.setTimeout(close, reduced ? 900 : 2500);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" || event.key === "Enter") close();
-    };
-    window.addEventListener("keydown", onKey);
-
+    if (seen) {
+      setPhase("gone");
+      return;
+    }
+    document.documentElement.classList.add("splash-active");
+    const out = window.setTimeout(() => setPhase("out"), SPLASH_MS - SPLASH_FADE_MS);
+    const end = window.setTimeout(() => {
+      try {
+        window.sessionStorage.setItem(SPLASH_KEY, "1");
+      } catch {}
+      setPhase("gone");
+      document.documentElement.classList.remove("splash-active");
+    }, SPLASH_MS);
     return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("keydown", onKey);
-      document.body.style.removeProperty("overflow");
+      window.clearTimeout(out);
+      window.clearTimeout(end);
+      document.documentElement.classList.remove("splash-active");
     };
-  }, [close]);
+  }, []);
 
-  if (!mounted || !visible) return null;
+  if (phase === "gone") return null;
 
   return (
     <div
-      className="fixed inset-0 z-[120] grid place-items-center overflow-hidden bg-[#030617] transition-opacity duration-500"
-      style={{ opacity: leaving ? 0 : 1 }}
-      onClick={close}
-      role="dialog"
-      aria-label="شاشة البداية"
+      id="abd-splash"
+      aria-hidden="true"
+      className={`abd-splash${phase === "out" ? " abd-splash-out" : ""}`}
     >
-      <div className="pointer-events-none absolute inset-0">
-        <div
-          className="absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-70 blur-3xl"
-          style={{ background: "radial-gradient(circle, rgba(62,242,255,0.24), transparent 62%)" }}
-        />
-        <div className="grid-overlay" />
-      </div>
-
-      <div className="relative flex flex-col items-center px-6 text-center">
-        <div className="splash-logo relative">
-          <div className="halo absolute inset-0 rounded-[30px]" />
-          <div
-            className="relative grid h-28 w-28 place-items-center rounded-[30px] border border-white/20"
-            style={{
-              background: "linear-gradient(150deg, #3ef2ff, #7c9dff 46%, #9c8bff)",
-              boxShadow:
-                "0 26px 70px -24px rgba(62,242,255,0.8), inset 0 1px 0 rgba(255,255,255,0.75)",
-              transform: "perspective(600px) rotateX(10deg)",
-            }}
-          >
-            <svg viewBox="0 0 64 64" className="h-16 w-16 text-[#04121a]" fill="none" stroke="currentColor" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M20 40h24a10 10 0 0 0 1.6-19.9A14 14 0 0 0 19.2 24 8 8 0 0 0 20 40Z" />
-              <g className="splash-arrow">
-                <path d="M32 30v14" />
-                <path d="m26 38.5 6 6 6-6" />
-              </g>
-            </svg>
-          </div>
-        </div>
-
-        <div className="splash-rise mt-8" style={{ animationDelay: "320ms" }}>
-          <p className="font-mono text-[0.62rem] uppercase tracking-[0.42em] text-mint/70">welcome to</p>
-          <h1 className="mt-2 text-[clamp(1.9rem,6vw,3rem)] font-extrabold tracking-tight text-white">
-            حمل <span className="text-gradient">الفيديو</span> ياعبود
-          </h1>
-        </div>
-
-        <div className="splash-rise splash-bar mt-7 h-[3px] w-52 overflow-hidden rounded-full bg-white/10" style={{ animationDelay: "520ms" }}>
-          <span className="block h-full w-full rounded-full bg-gradient-to-r from-mint via-iris to-coral" />
-        </div>
-
-        <p className="splash-rise mt-4 text-[0.72rem] text-mist/45" style={{ animationDelay: "640ms" }}>
-          نُجهّز تجربة التحميل ثلاثية الأبعاد…
-        </p>
-
-        <button
-          type="button"
-          onClick={close}
-          className="mt-8 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-[0.68rem] font-semibold text-mist/60 transition hover:border-mint/40 hover:text-white"
-        >
-          تخطّي المقدمة
-        </button>
-      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="abd-splash-blur" src="/splash.png" alt="" decoding="async" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="abd-splash-img" src="/splash.png" alt="" decoding="async" fetchPriority="high" />
     </div>
   );
 }
