@@ -57,7 +57,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning className={`${tajawal.variable} ${grotesk.variable} ${aref.variable}`}>
       <head>
-        <link rel="preload" as="image" href="/splash.png" />
+        <link rel="preload" as="image" href="/splash.jpg" />
         <script
           dangerouslySetInnerHTML={{
             __html:

@@ -103,7 +103,7 @@ export function MotionToggle({ className = "" }: { className?: string }) {
 const SPLASH_KEY = "abd-splash-seen-v2";
 
 const SPLASH_MS = 3000;
-const SPLASH_FADE_MS = 500;
+const SPLASH_FADE_MS = 800;
 
 /** Full-screen image splash: shown once per session for 3 s, fades in and out. */
 export function SplashGate() {
@@ -121,18 +121,21 @@ export function SplashGate() {
       return;
     }
     document.documentElement.classList.add("splash-active");
-    const out = window.setTimeout(() => setPhase("out"), SPLASH_MS - SPLASH_FADE_MS);
+    const out = window.setTimeout(() => {
+      document.documentElement.classList.add("splash-reveal");
+      setPhase("out");
+    }, SPLASH_MS - SPLASH_FADE_MS);
     const end = window.setTimeout(() => {
       try {
         window.sessionStorage.setItem(SPLASH_KEY, "1");
       } catch {}
       setPhase("gone");
-      document.documentElement.classList.remove("splash-active");
+      document.documentElement.classList.remove("splash-active", "splash-reveal");
     }, SPLASH_MS);
     return () => {
       window.clearTimeout(out);
       window.clearTimeout(end);
-      document.documentElement.classList.remove("splash-active");
+      document.documentElement.classList.remove("splash-active", "splash-reveal");
     };
   }, []);
 
@@ -145,9 +148,9 @@ export function SplashGate() {
       className={`abd-splash${phase === "out" ? " abd-splash-out" : ""}`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="abd-splash-blur" src="/splash.png" alt="" decoding="async" />
+      <img className="abd-splash-blur" src="/splash.jpg" alt="" decoding="async" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="abd-splash-img" src="/splash.png" alt="" decoding="async" fetchPriority="high" />
+      <img className="abd-splash-img" src="/splash.jpg" alt="" decoding="async" fetchPriority="high" />
     </div>
   );
 }
