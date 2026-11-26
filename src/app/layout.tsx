@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Space_Grotesk, Tajawal } from "next/font/google";
+import { Aref_Ruqaa, Space_Grotesk, Tajawal } from "next/font/google";
 import { MotionRoot, PageTransition, SplashGate } from "@/components/motion";
 import "./globals.css";
 
@@ -8,6 +8,13 @@ const tajawal = Tajawal({
   subsets: ["arabic", "latin"],
   weight: ["400", "500", "700", "800"],
   variable: "--font-tajawal",
+  display: "swap",
+});
+
+const aref = Aref_Ruqaa({
+  subsets: ["arabic", "latin"],
+  weight: ["700"],
+  variable: "--font-aref",
   display: "swap",
 });
 
@@ -19,11 +26,11 @@ const grotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "حمل معاء عبود — تنزيل فيديوهات المنصات بتجربة ثلاثية الأبعاد",
+  title: "حمل الفيديو ياعبود — تنزيل فيديوهات المنصات بتجربة ثلاثية الأبعاد",
   description:
     "تجربة تحميل ثلاثية الأبعاد: الصق رابط الفيديو من تيك توك، إنستغرام، يوتيوب، سناب شات أو فيسبوك، واختر الصيغة، ونرسل لك الملف مباشرة كـ MP4 أو WEBM أو صوت — بدون تسجيل وبدون صفحات وسيطة.",
   keywords: [
-    "حمل معاء عبود",
+    "حمل الفيديو ياعبود",
     "تحميل فيديو",
     "تنزيل تيك توك",
     "تحميل ريلز",
@@ -32,7 +39,7 @@ export const metadata: Metadata = {
     "MP4",
   ],
   openGraph: {
-    title: "حمل معاء عبود — الفيديو في جهازك بضغطة",
+    title: "حمل الفيديو ياعبود — الفيديو في جهازك بضغطة",
     description: "أداة عربية ثلاثية الأبعاد لاستخراج الفيديو من روابط المنصات وتنزيله مباشرة.",
     type: "website",
     locale: "ar_AR",
@@ -48,7 +55,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ar" dir="rtl" className={`${tajawal.variable} ${grotesk.variable}`}>
+    <html lang="ar" dir="rtl" className={`${tajawal.variable} ${grotesk.variable} ${aref.variable}`}>
       <body className="antialiased">
         <MotionRoot>
           <SplashGate />

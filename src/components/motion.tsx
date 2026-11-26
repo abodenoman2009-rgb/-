@@ -184,7 +184,7 @@ export function SplashGate() {
         <div className="splash-rise mt-8" style={{ animationDelay: "320ms" }}>
           <p className="font-mono text-[0.62rem] uppercase tracking-[0.42em] text-mint/70">welcome to</p>
           <h1 className="mt-2 text-[clamp(1.9rem,6vw,3rem)] font-extrabold tracking-tight text-white">
-            حمل <span className="text-gradient">معاء عبود</span>
+            حمل <span className="text-gradient">الفيديو</span> ياعبود
           </h1>
         </div>
 

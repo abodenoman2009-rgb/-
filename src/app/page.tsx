@@ -1,157 +1,92 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { AuroraBackground } from "@/components/aurora-background";
-import { BrandIcon, Logo, UiIcon } from "@/components/icons";
-import { Mascot } from "@/components/mascot";
-import { MotionToggle } from "@/components/motion";
-import { FEATURED_PLATFORMS } from "@/lib/platforms";
+import { useRouter } from "next/navigation";
+import "./login.css";
+
+const PREFILL_KEY = "abd-prefill";
 
 export default function WelcomePage() {
   const router = useRouter();
-  const [progress, setProgress] = useState(8);
-  const started = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  const [light, setLight] = useState(false);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-
-    let returning = false;
-    try {
-      returning = window.sessionStorage.getItem("abd-welcomed") === "1";
-      window.sessionStorage.setItem("abd-welcomed", "1");
-    } catch {
-      returning = false;
-    }
-
     router.prefetch("/downloader");
-    const delay = returning ? 500 : 2100;
-    const grow = window.setTimeout(() => setProgress(100), 120);
-    const jump = window.setTimeout(() => router.replace("/downloader"), delay);
-
-    return () => {
-      window.clearTimeout(grow);
-      window.clearTimeout(jump);
-    };
   }, [router]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(""), 2600);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const v = (input.current?.value ?? "").trim();
+    try {
+      const u = new URL(v);
+      if (!/^https?:$/.test(u.protocol)) throw new Error("protocol");
+    } catch {
+      setToast("الصق رابط فيديو صحيح أولاً");
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(PREFILL_KEY, v);
+    } catch {}
+    router.push("/downloader");
+  }
+
   return (
-    <main className="relative grid min-h-screen place-items-center overflow-hidden px-5 py-12">
-      <AuroraBackground density={38} />
+    <main className={`lg lg-app-wrap${light ? " light" : ""}`}>
+      <div className="lg-app">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="lg-hero" src="/login/hero.jpg" alt="" />
+        <button type="button" className="lg-theme lg-glass" aria-label="تبديل المظهر" onClick={() => setLight((v) => !v)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" /></svg>
+        </button>
 
-      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div className="neon-orb h-72 w-72" style={{ top: "8%", insetInlineEnd: "6%", background: "rgba(62,242,255,0.3)" }} />
-        <div
-          className="neon-orb h-80 w-80"
-          style={{ bottom: "-4rem", insetInlineStart: "2%", background: "rgba(139,124,255,0.28)", animationDelay: "1.6s" }}
-        />
-      </div>
+        <div className="lg-sig lg-glass" aria-label="توقيع عبود">عبود</div>
+        <h1>حمل <span>الفيديو</span> ياعبود</h1>
+        <p className="sub">عبود جاهز ليستقبل رابطك – الصقه في الحقل،<br />والملف يصل إلى جهازك مباشرة.</p>
 
-      <div className="absolute inset-x-0 top-4 z-20">
-        <div className="page-shell flex items-center justify-between">
-          <span className="font-mono text-[0.55rem] uppercase tracking-[0.35em] text-mist/35">abd · 3d</span>
-          <MotionToggle />
-        </div>
-      </div>
+        <form className="lg-card lg-glass" onSubmit={submit} noValidate>
+          <label className="lg-field">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1" /><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1" /></svg>
+            <input ref={input} type="url" inputMode="url" autoComplete="off" placeholder="https://tiktok.com/@abd/video/..." />
+            <span className="lg-fmt">MP4</span>
+          </label>
+          <button className="lg-go" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v11m-5-4 5 5 5-5M5 20h14" /></svg>
+            سحب الفيديو
+          </button>
+        </form>
 
-      <div className="relative z-10 flex w-full max-w-xl flex-col items-center text-center">
-        <div className="splash-logo relative mb-4">
-          <span className="halo absolute inset-[-22%] rounded-[30px]" aria-hidden="true" />
-          <Logo size={72} />
-        </div>
+        <div className="lg-or">أو مشاركة معنا</div>
+        <nav className="lg-soc">
+      <a className="lg-glass" href="https://www.tiktok.com" target="_blank" rel="noopener noreferrer" aria-label="TikTok"><svg viewBox="0 0 24 24"><path fill="#25f4ee" d="M16.5 3.5c.3 2.4 1.7 3.9 4 4.1v3a7 7 0 0 1-4-1.3v6.2a5.6 5.6 0 1 1-5.6-5.6h.6v3.1a2.6 2.6 0 1 0 2 2.5V3.5z" transform="translate(-.7 .5)"/><path fill="#fe2c55" d="M16.5 3.5c.3 2.4 1.7 3.9 4 4.1v3a7 7 0 0 1-4-1.3v6.2a5.6 5.6 0 1 1-5.6-5.6h.6v3.1a2.6 2.6 0 1 0 2 2.5V3.5z" transform="translate(.7 -.3)"/><path fill="#fff" d="M16.5 3.5c.3 2.4 1.7 3.9 4 4.1v3a7 7 0 0 1-4-1.3v6.2a5.6 5.6 0 1 1-5.6-5.6h.6v3.1a2.6 2.6 0 1 0 2 2.5V3.5z"/></svg></a>
+      <a className="lg-glass" href="https://www.instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="none"><defs><linearGradient id="lg-ig" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stopColor="#feda75"/><stop offset=".4" stopColor="#fa7e1e"/><stop offset=".65" stopColor="#d62976"/><stop offset="1" stopColor="#4f5bd5"/></linearGradient></defs><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#lg-ig)"/><rect x="6" y="6" width="12" height="12" rx="4" stroke="#fff" strokeWidth="1.8"/><circle cx="12" cy="12" r="2.8" stroke="#fff" strokeWidth="1.8"/><circle cx="16.3" cy="7.7" r="1" fill="#fff"/></svg></a>
+      <a className="lg-glass" href="https://www.youtube.com" target="_blank" rel="noopener noreferrer" aria-label="YouTube"><svg viewBox="0 0 24 24"><rect x="1" y="4.5" width="22" height="15" rx="4.5" fill="#f00"/><path d="M10 9v6l5.2-3z" fill="#fff"/></svg></a>
+      <a className="lg-glass" href="https://www.snapchat.com" target="_blank" rel="noopener noreferrer" aria-label="Snapchat"><svg viewBox="0 0 24 24"><rect x="0" y="0" width="24" height="24" rx="12" fill="#fffc00"/><path fill="#fff" stroke="#111" strokeWidth="1" d="M12 4.5c2.3 0 3.6 1.7 3.6 3.8v1.6c.4.3 1.3.3 1.6.5.3.3-.5.8-1 1 .5 1 1.3 1.8 2.3 2.2.2.4-1 .7-1.5.9-.1.4-.1.8-.5.8-.6 0-1.4-.3-2.1.1-.8.5-1.3 1.2-2.4 1.2s-1.6-.7-2.4-1.2c-.7-.4-1.5-.1-2.1-.1-.4 0-.4-.4-.5-.8-.5-.2-1.7-.5-1.5-.9 1-.4 1.8-1.2 2.3-2.2-.5-.2-1.3-.7-1-1 .3-.2 1.2-.2 1.6-.5V8.3c0-2.1 1.3-3.8 3.6-3.8z"/></svg></a>
+      <a className="lg-glass" href="https://www.facebook.com" target="_blank" rel="noopener noreferrer" aria-label="Facebook"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#1877f2"/><path fill="#fff" d="M13.2 21v-7h2.4l.4-2.8h-2.8v-1.7c0-.8.2-1.4 1.4-1.4H16V5.6c-.3 0-1.1-.1-2.1-.1-2.1 0-3.5 1.3-3.5 3.6v2.1H8V14h2.4v7z"/></svg></a>
+      <a className="lg-glass" href="https://x.com" target="_blank" rel="noopener noreferrer" aria-label="X"><svg viewBox="0 0 24 24"><path fill="#fff" d="M17.8 3h3l-6.6 7.5L22 21h-6.1l-4.8-6.2L5.6 21h-3l7-8L2.2 3h6.2l4.3 5.7zm-1.1 16.2h1.7L7.4 4.7H5.6z"/></svg></a>
+        </nav>
 
-        <span className="chip floaty-fast mb-4">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-mint opacity-70" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-mint" />
-          </span>
-          تجربة ثلاثية الأبعاد · أسرع من ثانيتين
-        </span>
-
-        <h1 className="animate-rise text-[clamp(2rem,6.4vw,3.4rem)] font-extrabold leading-[1.15] tracking-tight text-white">
-          حمل <span className="text-gradient">معاء عبود</span>
-        </h1>
-        <p
-          className="animate-rise mt-2.5 max-w-sm text-[0.85rem] leading-7 text-mist/65 sm:text-base"
-          style={{ animationDelay: "80ms" }}
-        >
-          عبود جاهز ليستقبل رابطك — الصقه في الحقل، والملف يصل إلى جهازك مباشرةً.
-        </p>
-
-        {/* 3D presenter + real input preview */}
-        <div className="relative mt-5 flex w-full max-w-md items-end justify-center gap-1">
-          <div className="relative hidden w-[132px] shrink-0 sm:block">
-            <Mascot variant="present" interactive={false} className="floaty-slow" />
-          </div>
-
-          <div className="scene-3d flex-1">
-            <div
-              className="glass neon-frame relative rounded-2xl p-3 text-start"
-              style={{ transform: "perspective(900px) rotateX(4deg)" }}
-            >
-              <div className="flex items-center gap-2 rounded-xl border border-white/12 bg-black/45 px-3 py-2.5">
-                <UiIcon name="link" className="h-4 w-4 shrink-0 text-mint/80" />
-                <span className="flex-1 truncate font-mono text-[0.72rem] text-mist/40" dir="ltr">
-                  https://tiktok.com/@abd/video/…
-                </span>
-                <span className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[0.55rem] text-mist/45">
-                  MP4
-                </span>
-              </div>
-              <div className="glow-button mt-2.5 flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-l from-mint to-iris py-2 text-[0.78rem] font-extrabold text-[#03130f]">
-                <UiIcon name="download" className="h-3.5 w-3.5" strokeWidth={2.4} />
-                سحب الفيديو
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="animate-rise mt-5 w-full max-w-sm" style={{ animationDelay: "160ms" }}>
-          <div className="progress-track">
-            <div
-              className="progress-fill transition-[width] duration-[1900ms] ease-out"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[0.68rem] font-semibold text-mist/55">
-            <span className="inline-flex items-center gap-1.5">
-              <UiIcon name="refresh" className="h-3.5 w-3.5 animate-spin" />
-              نُجهّز مساحة التحميل…
-            </span>
-            <span className="font-mono tracking-wider text-mint/70">FAST START</span>
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2" style={{ animationDelay: "220ms" }}>
-          {FEATURED_PLATFORMS.slice(0, 6).map((platform, index) => (
-            <span
-              key={platform.id}
-              className="floating-icon grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.05]"
-              style={{ color: platform.accent, animationDelay: `${index * 0.5}s` }}
-              title={platform.nameAr}
-            >
-              <BrandIcon platform={platform.id} className="h-4 w-4" />
-            </span>
-          ))}
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          <Link href="/downloader" className="btn-primary press-3d glow-button animate-rise !rounded-xl !px-5 !py-2.5 !text-sm">
-            <UiIcon name="download" className="h-4 w-4" strokeWidth={2.2} />
+        <div className="lg-row">
+          <button type="button" className="lg-btn lg-main" onClick={() => router.push("/downloader")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7.5" height="7.5" rx="2" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="2" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="2" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2" /></svg>
             الدخول مباشرة
-          </Link>
-          <Link href="/downloader#how" className="btn-ghost press-3d !rounded-xl !px-4 !py-2.5 !text-sm">
-            <UiIcon name="sparkle" className="h-4 w-4" />
+          </button>
+          <button type="button" className="lg-btn" onClick={() => router.push("/downloader#how")}>
+            <svg viewBox="0 0 24 24" fill="#d9b8ff"><path d="M9 3l1.6 4.4L15 9l-4.4 1.6L9 15l-1.6-4.4L3 9l4.4-1.6zM17 11l1 2.7 2.7 1-2.7 1-1 2.7-1-2.7-2.7-1 2.7-1zM17.5 3l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" /></svg>
             كيف يعمل؟
-          </Link>
+          </button>
         </div>
-
-        <p className="mt-5 text-[0.68rem] leading-6 text-mist/35">
-          بدون تسجيل · لا نحتفظ بملفاتك · للفيديوهات العامة فقط
-        </p>
+        <div className="lg-foot"><span>معاً عبود .. <b>دائماً الأفضل</b> <span style={{ color: "#a95cff" }}>♥</span></span></div>
       </div>
+
+      <div className={`lg-toast lg-glass${toast ? " show" : ""}`} role="status">{toast}</div>
     </main>
   );
 }
